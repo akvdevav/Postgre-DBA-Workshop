@@ -1,6 +1,8 @@
-Synthesis: The Professional Troubleshooting and Optimization Kit
+### Synthesis: The Professional Troubleshooting and Optimization Kit
+
 The final objective of this framework is to provide the attendee with a codified mental model for database performance engineering.
-Troubleshooting Workflow: The Mental Model
+
+#### Troubleshooting Workflow: The Mental Model
 When a performance incident is reported, the engineer should follow a structured diagnostic path to isolate the root cause:
 Level 1: System Saturation
 Check OS-level metrics (CPU, RAM, Disk I/O, Network).
