@@ -14,16 +14,13 @@ HAProxy: A load balancer that routes application traffic. It uses health checks 
 ### Laboratory: Simulating Automated Failover
 In this lab, we use a Docker Compose environment to observe how Patroni handles the sudden loss of the primary node.8
 
-Bash
-
-
-# 1. Check current cluster status
+### 1. Check current cluster status
 docker compose exec patroni1 patronictl list
 
-# 2. Simulate failure by stopping the leader
+### 2. Simulate failure by stopping the leader
 docker stop postgres_primary_container
 
-# 3. Observe Patroni electing a new leader and HAProxy updating its route
+### 3. Observe Patroni electing a new leader and HAProxy updating its route
 docker compose logs -f haproxy
 
 
