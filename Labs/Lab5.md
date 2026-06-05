@@ -53,31 +53,21 @@ JOIN pg_stat_activity l ON l.pid = ANY(pg_blocking_pids(w.pid));
 
 The output reveals the exact PID that is holding the lock, allowing the SRE to investigate the long-running transaction in 
 
-Session 1. This is a common pattern in "idle in transaction" sessions, where an application opens a transaction, performs an update, but fails to issue a COMMIT or ROLLBACK, effectively locking that row indefinitely.3
+### Session 1. This is a common pattern in "idle in transaction" sessions, where an application opens a transaction, performs an update, but fails to issue a COMMIT or ROLLBACK, effectively locking that row indefinitely.
 
 #### Query Profiling with pg_stat_statements
-While pg_stat_activity provides a snapshot of current activity, pg_stat_statements provides historical aggregation of every query executed on the server. It normalizes queries by replacing literal values with placeholders (e.g., $1), allowing the engineer to see which type of query is consuming the most resources overall.12
+While pg_stat_activity provides a snapshot of current activity, pg_stat_statements provides historical aggregation of every query executed on the server. It normalizes queries by replacing literal values with placeholders (e.g., $1), allowing the engineer to see which type of query is consuming the most resources overall.
 
-Metric
-Business/Technical Significance
-Optimization Action
-total_exec_time
-Total resource drain on the system. 12
-Candidates for indexing or architectural redesign.
-mean_exec_time
-Individual query latency. 12
-Tune for user experience and API responsiveness.
-shared_blks_read
-High disk I/O dependency. 15
-Indicates missing indexes or a cache that is too small.
-temp_blks_written
-Disk-based sorting and hashing. 12
-Increase work_mem for this specific query class.
+| Metric | Business/Technical Significance | Optimization Action |
+| :---: | :---: | :---: |
+| `total_exec_time` | Total resource drain on the system | Candidates for indexing or architectural redesign. |
+| `mean_exec_time` | Individual query latency | Tune for user experience and API responsiveness. |
+| `shared_blks_read` | High disk I/O dependency | Indicates missing indexes or a cache that is too small. |
+| `temp_blks_written` | Disk-based sorting and hashing | Increase `work_mem` for this specific query class. |
 
-Implementing pg_stat_statements
-This extension requires preloading into shared memory, necessitating a database restart.15
 
-Ini, TOML
+### Implementing pg_stat_statements
+This extension requires preloading into shared memory, necessitating a database restart.
 
 
 # postgresql.conf
@@ -103,13 +93,12 @@ ORDER BY total_exec_time DESC
 LIMIT 5;
 ```
 
-The Silent Killer: Transaction ID (XID) Wraparound
-A 32-bit transaction ID system allows for approximately 4 billion unique transaction identifiers. In a high-velocity database, this limit can be reached faster than expected. PostgreSQL uses modulo arithmetic to treat half of these IDs as "the past" and half as "the future." As the counter advances, old row versions must be "frozen"—marked as globally visible—before the counter wraps around and makes them appear to be in the future (and thus invisible).20
-If the age of the oldest unfrozen transaction (datfrozenxid) approaches 2 billion, PostgreSQL will enter a protective "read-only" mode to prevent data corruption. This is one of the most severe failure modes for a production database.20
+### The Silent Killer: Transaction ID (XID) Wraparound
+A 32-bit transaction ID system allows for approximately 4 billion unique transaction identifiers. In a high-velocity database, this limit can be reached faster than expected. PostgreSQL uses modulo arithmetic to treat half of these IDs as "the past" and half as "the future." As the counter advances, old row versions must be "frozen"—marked as globally visible—before the counter wraps around and makes them appear to be in the future (and thus invisible).
+If the age of the oldest unfrozen transaction (datfrozenxid) approaches 2 billion, PostgreSQL will enter a protective "read-only" mode to prevent data corruption. This is one of the most severe failure modes for a production database.
 Monitoring XID Age and Wraparound Risk
-Engineers must monitor the "age" of the database to ensure autovacuum is successfully freezing old tuples.20
+Engineers must monitor the "age" of the database to ensure autovacuum is successfully freezing old tuples.
 
-SQL
 
 ```
 SELECT 
