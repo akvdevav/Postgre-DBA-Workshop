@@ -27,7 +27,7 @@ podman build -t patroni .
 podman compose up -d
 ```
 
-```
+```mermaid
 graph TD
     %% Define external entities
     subgraph Host_Machine ["Host Machine (Mac M1)"]
