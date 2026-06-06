@@ -32,6 +32,9 @@ EXPLAIN ANALYSE SELECT * FROM SENSOR_LOGS;
 ```
 -- Standard B-Tree
 CREATE INDEX idx_logs_btree ON sensor_logs (recorded_at);
+```
+
+```
 -- Measure size
 SELECT pg_size_pretty(pg_relation_size('idx_logs_btree')); -- Result: ~110 MB
 ```
@@ -45,9 +48,11 @@ EXPLAIN ANALYSE SELECT * FROM SENSOR_LOGS;
 DROP INDEX idx_logs_btree;
 CREATE INDEX idx_logs_brin ON sensor_logs USING BRIN (recorded_at);
 ```
+
+```
 -- Measure size
 SELECT pg_size_pretty(pg_relation_size('idx_logs_brin')); -- Result: ~48 KB
-````
+```
 
 ```
 EXPLAIN ANALYSE SELECT * FROM SENSOR_LOGS;

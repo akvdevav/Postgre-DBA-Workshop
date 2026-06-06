@@ -25,13 +25,24 @@ podman run -d \
   -c pg_stat_statements.track=all
 ```
 
+#### Creating an addition user to validate permissions
+
 ```
-CREATE ROLE my_admin WITH LOGIN SUPERUSER PASSWORD 'my_password';
+CREATE ROLE admin WITH LOGIN SUPERUSER PASSWORD 'password';
 ```
+
+#### pg_stat_statements
+The pg_stat_statements extension is arguably the single most important performance monitoring tool in the entire PostgreSQL ecosystem.
+
+When you run CREATE EXTENSION pg_stat_statements;, you are enabling a built-in module that tracks detailed planning and execution statistics for every single SQL query run against your database. It is the gold standard for finding bottlenecks, slow queries, and resource hogs.
 
 ```
 CREATE EXTENSION pg_stat_statements;
 ```
+
+#### pg_buffercache is your memory X-ray machine.
+
+When you run CREATE EXTENSION IF NOT EXISTS pg_buffercache;, you are unlocking the ability to look directly inside PostgreSQL's RAM to see exactly which tables and indexes are taking up your memory in real-time.
 
 ```
 CREATE EXTENSION IF NOT EXISTS pg_buffercache;
@@ -40,6 +51,7 @@ CREATE EXTENSION IF NOT EXISTS pg_buffercache;
 ```
 CREATE DATABASE postgres_workshop;
 ```
+
 ```
 psql -h localhost -p 5432 -U postgres -d postgres
 ```
