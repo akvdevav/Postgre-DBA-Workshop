@@ -3,7 +3,7 @@
 A reliable PostgreSQL architecture must survive both the failure of a single node and the accidental deletion of data by a user.
 HA Stacks: Patroni, Etcd, and HAProxy
 
-High Availability in PostgreSQL is achieved by combining several specialized tools into a cohesive "stack." The industry standard for automated failover is Patroni.1
+High Availability in PostgreSQL is achieved by combining several specialized tools into a cohesive "stack." The industry standard for automated failover is Patroni.
 
 Patroni: A Python-based cluster manager that runs on each database node. It manages the PostgreSQL process and interacts with a Distributed Configuration Store (DCS).
 
@@ -12,13 +12,145 @@ Etcd: The DCS that serves as the "source of truth." It maintains a leader key wi
 HAProxy: A load balancer that routes application traffic. It uses health checks against the Patroni REST API to determine which node is currently the primary (endpoint /primary) and which are replicas (endpoint /replica).1
 
 ### Laboratory: Simulating Automated Failover
-In this lab, we use a Docker Compose environment to observe how Patroni handles the sudden loss of the primary node.8
+In this lab, we use a Podman or Docker Compose environment to observe how Patroni handles the sudden loss of the primary node.
+
+```
+git clone https://github.com/patroni/patroni
+cd patroni
+```
+
+```
+podman build -t patroni .
+```
+### Podman compose to setup the Patroni Clusterd Postgres
+```
+podman compose up -d
+```
+
+```
+graph TD
+    %% Define external entities
+    subgraph Host_Machine ["Host Machine (Mac M1)"]
+        direction TB
+        
+        %% Client Applications
+        subgraph Applications ["External Access"]
+            direction LR
+            psql_client[("SQL Clients <br/> (pgAdmin4, psql)")]
+            browser[("Web Browser <br/> (HAProxy Stats)")]
+        
+            %% Port Mappings
+            host_p5050(["localhost:5050"])
+            host_p5001(["localhost:5001"])
+        end
+
+        %% Podman Environment
+        subgraph Podman_Compose ["Podman Compose Environment"]
+            direction TB
+            
+            %% The custom Network
+            subgraph Container_Network ["Podman Network: patroni_demo (Bridge)"]
+                direction TB
+                
+                %% HAProxy Service
+                container_haproxy[["Container: <br/><b>demo-haproxy</b><br/>(haproxy)"]]
+
+                %% Patroni / PostgreSQL Service
+                subgraph Patroni_Cluster ["PostgreSQL HA Cluster (Streaming Replication)"]
+                    direction LR
+                    container_patroni1[["Container: <br/><b>demo-patroni1</b><br/>(patroni/postgres)"]]
+                    container_patroni2[["Container: <br/><b>demo-patroni2</b><br/>(patroni/postgres)"]]
+                    container_patroni3[["Container: <br/><b>demo-patroni3</b><br/>(patroni/postgres)"]]
+                end
+
+                %% etcd / DCS Service
+                subgraph etcd_Cluster ["etcd Cluster (DCS Quorum)"]
+                    direction LR
+                    container_etcd1[["Container: <br/><b>demo-etcd1</b><br/>(etcd)"]]
+                    container_etcd2[["Container: <br/><b>demo-etcd2</b><br/>(etcd)"]]
+                    container_etcd3[["Container: <br/><b>demo-etcd3</b><br/>(etcd)"]]
+                end
+            end
+        end
+    end
+
+    %% -- Define Flows --
+
+    %% External Connections (via mapped ports)
+    psql_client --> host_p5050
+    host_p5050 --> container_haproxy
+    
+    browser --> host_p5001
+    host_p5001 --> container_haproxy
+
+    %% Internal Traffic (via container name DNS)
+    
+    %% HAProxy routing to the Leader (thicker line == main path)
+    container_haproxy ==>|Routes SQL to Leader| container_patroni1
+    container_haproxy -.->|Checks Health| container_patroni2
+    container_haproxy -.->|Checks Health| container_patroni3
+
+    %% Patroni inter-node communication (Streaming Replication)
+    container_patroni1 ==> container_patroni2
+    container_patroni1 ==> container_patroni3
+
+    %% Patroni talking to the Distributed Configuration Store
+    container_patroni1 -.-> etcd_Cluster
+    container_patroni2 -.-> etcd_Cluster
+    container_patroni3 -.-> etcd_Cluster
+
+    %% etcd internal quorum communication
+    container_etcd1 <==> container_etcd2
+    container_etcd1 <==> container_etcd3
+    container_etcd2 <==> container_etcd3
+
+    %% Define Node Styles (This part is stable)
+    classDef external fill:#f9f,stroke:#333,stroke-width:2px,color:black;
+    classDef port fill:#ff9,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5,color:black;
+    classDef network fill:#e1f5fe,stroke:#0277bd,stroke-width:2px,color:black;
+    classDef service fill:#fff,stroke:#333,stroke-width:1px,color:black;
+    classDef main fill:#f5f5f5,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5,color:black;
+
+    class host_p5050,host_p5001 port;
+    class psql_client,browser external;
+    class container_haproxy,container_patroni1,container_patroni2,container_patroni3,container_etcd1,container_etcd2,container_etcd3 service;
+    class Container_Network network;
+    class Host_Machine main;
+```
 
 ### 1. Check current cluster status
-docker compose exec patroni1 patronictl list
+
+```
+podman exec -it  demo-patroni1 patronictl list
+```
+
+##### Samaple output for reference
+```
+avannala@Q2HWTCX6H4 patroni % podman exec -it  demo-patroni1 patronictl list
++ Cluster: demo (7648343233083748380) --------+----+-------------+-----+------------+-----+
+| Member   | Host       | Role    | State     | TL | Receive LSN | Lag | Replay LSN | Lag |
++----------+------------+---------+-----------+----+-------------+-----+------------+-----+
+| patroni1 | 10.89.1.14 | Leader  | running   |  1 |             |     |            |     |
+| patroni2 | 10.89.1.15 | Replica | streaming |  1 |   0/404F9F0 |   0 |  0/404F9F0 |   0 |
+| patroni3 | 10.89.1.11 | Replica | streaming |  1 |   0/404F9F0 |   0 |  0/404F9F0 |   0 |
++----------+------------+---------+-----------+----+-------------+-----+------------+-----+
+```
+
+### 2. Create an admin Role to login via PgAdmin 
+
+NOTE: Leader node should use to run when running create/write commands
+
+```
+podman exec -it  demo-patroni1 psql -d postgres -c "CREATE ROLE admin WITH LOGIN SUPERUSER PASSWORD 'password';"
+```
+
+### 3 Lets load some sample data
+
+```
+podman exec -it  demo-patroni1 psql -d postgres 
+```
 
 ### 2. Simulate failure by stopping the leader
-docker stop postgres_primary_container
 
 ### 3. Observe Patroni electing a new leader and HAProxy updating its route
 docker compose logs -f haproxy
@@ -44,7 +176,7 @@ Etcd acts as the source of truth for our cluster. It will keep track of who is i
 podman run -d --name etcd \
   --network pg-arena \
   -e ALLOW_NONE_AUTHENTICATION=yes \
-  docker.io/bitnami/etcd:latest
+  dhi.io/etcd:3-debian-dev
 ```
 
 ### Step 3: Enter the Champion (Deploy Node 1)
@@ -57,7 +189,8 @@ podman run -d --name pg-node1 \
   -e PATRONI_SCOPE="demo-cluster" \
   -e PATRONI_NAME="pg-node1" \
   -e PATRONI_SUPERUSER_PASSWORD="supersecretpassword" \
-  docker.io/bitnami/patroni:latest
+  d2cio/patroni
+
 ```
 
 ### Step 4: Enter the Challenger (Deploy Node 2)
@@ -70,7 +203,7 @@ podman run -d --name pg-node2 \
   -e PATRONI_SCOPE="demo-cluster" \
   -e PATRONI_NAME="pg-node2" \
   -e PATRONI_SUPERUSER_PASSWORD="supersecretpassword" \
-  docker.io/bitnami/patroni:latest
+  d2cio/patroni
 ```
 
 Step 5: Check the Scoreboard
