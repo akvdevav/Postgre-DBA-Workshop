@@ -200,13 +200,16 @@ SELECT account_id, user_id, currency, balance, account_type, updated_at
 	FROM public.accounts limit 10;
 ```
 
-### 10. Validate node status via psql 
+### 10. Validate node status via psql connecting via ha_proxy
 
 ```
 podman exec -it demo-haproxy psql -h 127.0.0.1 -p 5000 -U admin  -d postgres
 ```
 
 Password for user admin: password
+
+#### Category 1: General Node Status (Am I Primary or Replica?)
+Before running complex monitoring, quickly verify the role of the node you are connected to.
 
 ```
 psql (17.10 (Debian 17.10-1.pgdg13+1))
@@ -221,77 +224,16 @@ postgres=# SELECT pg_is_in_recovery();
 postgres=#
 ```
 
-```
-podman exec -it demo-patroni2 psql -U postgres -d postgres -c "SELECT pg_is_in_recovery();"
-```
 ##### Interpretation:
 
 - f (false): You are connected to the Primary/Leader node. Proceed with the queries below.
 
 - t (true): You are connected to a Standby/Replica node. (Replication views pg_stat_replication and pg_replication_slots will likely be empty on this node). Connect to HAProxy (port 5050) instead.
 
-### 10. psql queries 
-
-````
- podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
-SELECT
-    application_name AS replica_name,
-    client_addr AS ip_address,
-    state,
-    sync_state
-FROM
-    pg_stat_replication;
-"
-```
-
+#### Category 2: Detailed Replication Status (From Primary View)
+This is the most critical query to run on the Primary. It shows every connected replica, its network address, replication state, sync status (Synchronous vs. Asynchronous), and precisely how much it lags behind.
 
 ```
-podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
-SELECT
-    pg_last_wal_receive_lsn() AS last_received,
-    pg_last_wal_replay_lsn() AS last_replayed,
-    -- Calculate how much data is received but not yet replayed locally
-    pg_size_pretty(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn())) AS pending_replay_bytes;
-"
-```
-
-
-```
-podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
-SELECT
-    slot_name,
-    plugin,
-    slot_type,
-    active, -- Is a replica currently using this slot?
-    restart_lsn,
-    -- Calculate how much WAL data this slot is holding back from being deleted (Postgres 13+)
-    pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS wal_kept_by_slot
-FROM
-    pg_replication_slots;"
-```
-
-
-
-```
-podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
-SELECT
-    application_name AS replica_name,
-    client_addr AS ip_address,
-    state,
-    sync_state,
-    -- The time lag between write on primary and write on replica
-    write_lag,
-    -- The time lag between write on primary and flush on replica
-    flush_lag,
-    -- The time lag between write on primary and replay on replica (Actual read consistency lag)
-    replay_lag
-FROM
-    pg_stat_replication;"
-```
-
-
-```
-podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
 SELECT
     usename AS user_name,
     application_name AS replica_name,
@@ -308,8 +250,120 @@ SELECT
     -- Pretty print lag (e.g., 5 MB, 10 GB)
     pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)) AS pretty_total_lag
 FROM
-    pg_stat_replication;"
+    pg_stat_replication;
 ```
+
+##### Interpretation:
+
+replica_name: This typically matches the Patroni container name (e.g., pg-node1).
+
+state:
+
+streaming: Healthy. Data is being sent actively.
+
+startup or catchup: Replica just joined and is syncing bulk data from the primary before starting streaming.
+
+sync_state:
+
+async: Patroni standard. Data is replicated but the primary doesn't wait for confirmation.
+
+sync: Only seen if you have configured Patroni for synchronous replication. Primary waits for this node to commit.
+
+pretty_total_lag: This is your key metric. It tells you exactly how far behind the primary this replica is. In a healthy cluster, this should be very small (kilobytes or low megabytes). If this is continuously growing, the replica cannot keep up.
+
+
+#### Category 3: Time-Based Replication Lag
+Bytes are great, but sometimes you just need to know how many seconds or minutes a replica lags behind.
+```
+SELECT
+    application_name AS replica_name,
+    client_addr AS ip_address,
+    state,
+    sync_state,
+    -- The time lag between write on primary and write on replica
+    write_lag,
+    -- The time lag between write on primary and flush on replica
+    flush_lag,
+    -- The time lag between write on primary and replay on replica (Actual read consistency lag)
+    replay_lag
+FROM
+    pg_stat_replication;
+```
+
+##### Interpretation:
+
+This view shows the actual time difference for the different stages of replication. replay_lag is usually the most important number, as it defines how "stale" the data on that standby is if you were to read from it.
+
+#### Category 4: Patroni Replication Slots Status
+Patroni strictly uses Physical Replication Slots. This is vital for high availability. These slots ensure that the primary node does not delete necessary WAL segments (replication data) until the replica confirms it has received and written them. If a replica crashes, the primary keeps saving WAL segments until the replica returns.
+
+```
+SELECT
+    slot_name,
+    plugin,
+    slot_type,
+    active, -- Is a replica currently using this slot?
+    restart_lsn,
+    -- Calculate how much WAL data this slot is holding back from being deleted (Postgres 13+)
+    pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS wal_kept_by_slot
+FROM
+    pg_replication_slots;
+```
+##### Interpretation:
+
+slot_name: Patroni automatically names these slots.
+
+active = f (false): A critical indicator. It means a slot exists, but no replica is currently connected to it. Patroni creates permanent slots. If a replica container dies, its slot becomes inactive, and the primary starts accumulating WAL data.
+
+wal_kept_by_slot: If a slot is inactive for a long time, this number will grow rapidly. If your primary node runs out of disk space in pg_wal because an inactive slot is hogging data, the primary will crash. This is a crucial number to monitor in production.
+
+#### Category 5: Standby/Replica Perspective (WAL LSN status)
+If you are connected directly to a Replica node (e.g., port 5433 or 5434 on your local computer, mapped to pg-node1 or pg-node2), you cannot see pg_stat_replication. Instead, you check what WAL data you have received and replayed.
+
+```
+SELECT
+    pg_last_wal_receive_lsn() AS last_received,
+    pg_last_wal_replay_lsn() AS last_replayed,
+    -- Calculate how much data is received but not yet replayed locally
+    pg_size_pretty(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn())) AS pending_replay_bytes;
+
+```
+##### Interpretation:
+
+This shows the local progress of the replica. If pending_replay_bytes is large, it means the replica has received data from the primary but is slow to apply it locally to the database files (often caused by CPU or I/O bottleneck on the replica).
+
+
+#### Category 6: Understanding Data Volumes/Distribution (Database Sizes)
+Since replicas are bit-for-bit copies of the primary, they should contain identical data. You can check database sizes from any node, but primary is authoritative.
+
+```
+-- Query showing total database size on the current node
+SELECT
+    datname,
+    pg_size_pretty(pg_database_size(datname)) AS db_size
+FROM
+    pg_database
+ORDER BY
+    pg_database_size(datname) DESC;
+```
+
+### Checking the replica nodes form psql
+
+```
+SELECT
+    application_name AS replica_name,
+    client_addr AS ip_address,
+    state,
+    sync_state
+FROM
+    pg_stat_replication;
+```
+
+
+
+
+
+
 
 
 The system should complete the failover in under 30 seconds, ensuring minimal downtime for the application. The use of a DCS like Etcd prevents "Split-Brain" scenarios, where two nodes both believe they are the primary, which would lead to catastrophic data divergence.
