@@ -22,6 +22,7 @@ cd patroni
 ```
 podman build -t patroni .
 ```
+
 ### Podman compose to setup the Patroni Clusterd Postgres
 ```
 podman compose up -d
@@ -197,6 +198,117 @@ avannala@Q2HWTCX6H4 patroni % podman exec -it  demo-patroni2 patronictl list
 ```
 SELECT account_id, user_id, currency, balance, account_type, updated_at
 	FROM public.accounts limit 10;
+```
+
+### 10. Validate node status via psql 
+
+```
+podman exec -it demo-haproxy psql -h 127.0.0.1 -p 5000 -U admin  -d postgres
+```
+
+Password for user admin: password
+
+```
+psql (17.10 (Debian 17.10-1.pgdg13+1))
+Type "help" for help.
+
+postgres=# SELECT pg_is_in_recovery();
+ pg_is_in_recovery
+-------------------
+ f
+(1 row)
+
+postgres=#
+```
+
+```
+podman exec -it demo-patroni2 psql -U postgres -d postgres -c "SELECT pg_is_in_recovery();"
+```
+##### Interpretation:
+
+- f (false): You are connected to the Primary/Leader node. Proceed with the queries below.
+
+- t (true): You are connected to a Standby/Replica node. (Replication views pg_stat_replication and pg_replication_slots will likely be empty on this node). Connect to HAProxy (port 5050) instead.
+
+### 10. psql queries 
+
+````
+ podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
+SELECT
+    application_name AS replica_name,
+    client_addr AS ip_address,
+    state,
+    sync_state
+FROM
+    pg_stat_replication;
+"
+```
+
+
+```
+podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
+SELECT
+    pg_last_wal_receive_lsn() AS last_received,
+    pg_last_wal_replay_lsn() AS last_replayed,
+    -- Calculate how much data is received but not yet replayed locally
+    pg_size_pretty(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn())) AS pending_replay_bytes;
+"
+```
+
+
+```
+podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
+SELECT
+    slot_name,
+    plugin,
+    slot_type,
+    active, -- Is a replica currently using this slot?
+    restart_lsn,
+    -- Calculate how much WAL data this slot is holding back from being deleted (Postgres 13+)
+    pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS wal_kept_by_slot
+FROM
+    pg_replication_slots;"
+```
+
+
+
+```
+podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
+SELECT
+    application_name AS replica_name,
+    client_addr AS ip_address,
+    state,
+    sync_state,
+    -- The time lag between write on primary and write on replica
+    write_lag,
+    -- The time lag between write on primary and flush on replica
+    flush_lag,
+    -- The time lag between write on primary and replay on replica (Actual read consistency lag)
+    replay_lag
+FROM
+    pg_stat_replication;"
+```
+
+
+```
+podman exec -it demo-patroni2 psql -U postgres -d postgres -c "
+SELECT
+    usename AS user_name,
+    application_name AS replica_name,
+    client_addr AS ip_address,
+    state,
+    sync_state,
+    pg_current_wal_lsn() AS primary_lsn,
+    sent_lsn,
+    write_lsn,
+    flush_lsn,
+    replay_lsn,
+    -- Calculate lag in bytes (Modern PG 10+)
+    pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn) AS total_lag_bytes,
+    -- Pretty print lag (e.g., 5 MB, 10 GB)
+    pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)) AS pretty_total_lag
+FROM
+    pg_stat_replication;"
 ```
 
 
