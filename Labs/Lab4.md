@@ -162,17 +162,25 @@ Run this query in your second terminal. It utilizes watch (if using psql) to ref
 
 ```
 -- In Terminal 2: Watch for active autovacuum processes
-\watch 0.5
-SELECT 
-    pid, 
-    phase, 
-    allocated_bytes, 
-    num_dead_tuples, 
-    num_dead_tuples_predicted
+ SELECT
+    pid,
+    phase,
+    heap_blks_total,
+    heap_blks_scanned
 FROM pg_stat_progress_vacuum;
+\watch 0.5
 ```
-
 (If your client doesn't support \watch, you can manually spam-execute that SELECT query during Step 2).
+
+###### Sample output
+```
+         Sat Jun  6 15:34:00 2026 (every 0.5s)
+
+ pid |     phase     | heap_blks_total | heap_blks_scanned
+-----+---------------+-----------------+-------------------
+ 485 | scanning heap |           29782 |              5488
+(1 row)
+```
 
 
 #### Step 2: The HFT Churn (Generating Dead Tuples)
@@ -224,13 +232,51 @@ FROM pg_stat_user_tables
 WHERE relname = 'order_book';
 ```
 
+###### Sample output
+```
+postgres_workshop=# -- Check the table statistics
+SELECT
+    relname AS table_name,
+    n_dead_tup AS remaining_dead_tuples,
+    autovacuum_count,
+    last_autovacuum
+FROM pg_stat_user_tables
+WHERE relname = 'order_book';
+ table_name | remaining_dead_tuples | autovacuum_count |        last_autovacuum
+------------+-----------------------+------------------+-------------------------------
+ order_book |                     0 |                5 | 2026-06-06 21:30:00.310556+00
+(1 row)
+
+postgres_workshop=#
+```
+
 Observe the autovacuum_count. Because our thresholds were so low and the churn was so aggressive, you will likely see that autovacuum triggered multiple times in those few seconds to keep the table clean.
 
 
 #### Step 5: (Optional) Checking the PostgreSQL Server Logs
 If you have access to the actual PostgreSQL server log files (or docker logs), autovacuum logs its actions when it takes a long time or when configured to do so. You will see lines like this confirming its background success:
 
-Plaintext
+```
 LOG:  automatic vacuum of table "postgres.public.order_book": index scans: 1
 pages: 0 removed, 1218 remain, 0 skipped due to pins, 0 skipped frozen
 tuples: 98114 removed, 100000 remain, 0 are dead but not yet removable
+```
+
+```
+-- For a high-update transactions table
+ALTER TABLE transactions SET (
+  autovacuum_vacuum_threshold = 50,
+  autovacuum_vacuum_scale_factor = 0.01,
+  autovacuum_analyze_threshold = 50,
+  autovacuum_analyze_scale_factor = 0.01,
+  autovacuum_vacuum_cost_delay = 2,
+  autovacuum_vacuum_cost_limit = 1000
+);
+
+-- For audit log tables (mostly inserts, few updates)
+ALTER TABLE audit_logs SET (
+  autovacuum_vacuum_threshold = 5000,
+  autovacuum_vacuum_scale_factor = 0.1,
+  autovacuum_freeze_min_age = 50000000
+);
+```
