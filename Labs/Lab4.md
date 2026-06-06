@@ -45,7 +45,9 @@ Before we generate the dead tuples, let's see how fast the database can find a s
 ```
 -- Turn on timing in psql
 \timing on
+```
 
+```
 -- Query for open Apple buy orders
 SELECT COUNT(*) FROM order_book 
 WHERE symbol = 'AAPL' AND order_type = 'BUY' AND status = 'OPEN';
@@ -129,3 +131,106 @@ WHERE relname = 'order_book';
 ```
 
 
+```
+-- CUSTOM TUNING: Make autovacuum hyper-aggressive just for this table!
+-- It will trigger after only 1,000 dead tuples accumulate instead of the default 20% + 50 rows.
+ALTER TABLE order_book SET (
+    autovacuum_enabled = true,
+    autovacuum_vacuum_scale_factor = 0,
+    autovacuum_vacuum_threshold = 1000,
+    autovacuum_vacuum_cost_delay = 0
+);
+```
+
+
+```
+-- Insert 100,000 initial "OPEN" orders
+INSERT INTO order_book (trader_id, symbol, order_type, price, status)
+SELECT 
+    floor(random() * 1000 + 1)::INT,
+    (ARRAY['AAPL', 'MSFT', 'AMZN', 'NVDA', 'TSLA'])[floor(random() * 5 + 1)],
+    (ARRAY['BUY', 'SELL'])[floor(random() * 2 + 1)],
+    (random() * 200 + 50)::NUMERIC(10, 2),
+    'OPEN'
+FROM generate_series(1, 100000);
+```
+
+#### Step 1: Open a Live Monitoring Session
+Before generating the churn, open a second terminal window connected to your database. We will use this to catch autovacuum in the act.
+
+Run this query in your second terminal. It utilizes watch (if using psql) to refresh every half-second and look for running autovacuum workers:
+
+```
+-- In Terminal 2: Watch for active autovacuum processes
+\watch 0.5
+SELECT 
+    pid, 
+    phase, 
+    allocated_bytes, 
+    num_dead_tuples, 
+    num_dead_tuples_predicted
+FROM pg_stat_progress_vacuum;
+```
+
+(If your client doesn't support \watch, you can manually spam-execute that SELECT query during Step 2).
+
+
+#### Step 2: The HFT Churn (Generating Dead Tuples)
+Now, return to Terminal 1. We will run a much heavier, slower PL/pgSQL block. By adding a small pg_sleep delay into the loop, we stretch the execution time to roughly 15–20 seconds. This gives you plenty of time to look at Terminal 2 and see autovacuum wake up and fight the dead tuples concurrently.
+
+```
+-- In Terminal 1: Run a slower, massive churn loop
+DO $$
+BEGIN
+    FOR i IN 1..40 LOOP
+        -- Algorithms constantly adjusting their bid/ask prices
+        UPDATE order_book 
+        SET price = price + (random() * 0.50 - 0.25) 
+        WHERE status = 'OPEN';
+        
+        -- Cancelling a subset of orders
+        UPDATE order_book 
+        SET status = 'CANCELLED' 
+        WHERE order_id % 40 = i;
+        
+        -- Artificial delay to allow autovacuum to kick off concurrently
+        PERFORM pg_sleep(0.4); 
+    END LOOP;
+END $$;
+```
+
+#### Step 3: Catching Autovacuum Live
+While the script in Terminal 1 is running, look over at Terminal 2.
+
+Because we lowered autovacuum_vacuum_threshold to 1000, you will see a row pop up in pg_stat_progress_vacuum. You are looking at a live background worker vacuuming your table while your code is still updating it!
+
+What to observe in Terminal 2:
+
+phase: You will watch it cycle from scanning heap to vacuuming indexes and vacuuming heap.
+
+num_dead_tuples: You will see exactly how many dead rows the worker has identified and cleared.
+
+#### Step 4: Reviewing the Battle History
+Once the churn loop finishes, we can check how many times the autovacuum daemon had to step in automatically during our test.
+
+```
+-- Check the table statistics
+SELECT 
+    relname AS table_name,
+    n_dead_tup AS remaining_dead_tuples,
+    autovacuum_count,
+    last_autovacuum
+FROM pg_stat_user_tables 
+WHERE relname = 'order_book';
+```
+
+Observe the autovacuum_count. Because our thresholds were so low and the churn was so aggressive, you will likely see that autovacuum triggered multiple times in those few seconds to keep the table clean.
+
+
+#### Step 5: (Optional) Checking the PostgreSQL Server Logs
+If you have access to the actual PostgreSQL server log files (or docker logs), autovacuum logs its actions when it takes a long time or when configured to do so. You will see lines like this confirming its background success:
+
+Plaintext
+LOG:  automatic vacuum of table "postgres.public.order_book": index scans: 1
+pages: 0 removed, 1218 remain, 0 skipped due to pins, 0 skipped frozen
+tuples: 98114 removed, 100000 remain, 0 are dead but not yet removable

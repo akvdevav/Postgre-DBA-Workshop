@@ -223,3 +223,7 @@ Emergency Prevention: If your monitoring queries show a table's transaction age 
 After Bulk Loads: If you have just loaded a massive amount of historical, read-only data into a table (e.g., millions of rows of logs or archives) that will rarely change, running VACUUM FREEZE immediately ensures those rows are frozen right away. This prevents autovacuum from having to waste heavy disk I/O scanning that giant table later on during peak traffic hours.
 
 Before Major Migrations/Upgrades: Freezing tables ahead of major database operations ensures that the system doesn't unexpectedly trigger an intensive background anti-wraparound vacuum in the middle of your maintenance window.
+
+
+
+- https://wiki.postgresql.org/wiki/Show_database_bloat
