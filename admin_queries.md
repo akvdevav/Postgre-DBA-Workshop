@@ -77,3 +77,149 @@ Database administrators use this extension to answer critical performance questi
 If you just run SELECT * FROM pg_buffercache;, the output is practically unreadable for humans because it only uses internal ID numbers (relfilenode).
 
 To make it useful, you have to join it with the pg_class table to get the actual names of your tables and indexes. Here is the classic DBA query used to find the Top 10 memory hogs in your database:
+
+
+#### View All Running Queries
+
+```
+SELECT 
+    pid,
+    usename AS user,
+    datname AS database,
+    now() - query_start AS duration,
+    state,
+    query
+FROM pg_stat_activity
+WHERE state != 'idle' 
+  AND pid <> pg_backend_pid()
+ORDER BY duration DESC;
+```
+
+##### View Queries Running Longer Than 5 Minutes
+
+```
+SELECT 
+    pid,
+    now() - query_start AS duration,
+    query,
+    state
+FROM pg_stat_activity
+WHERE state = 'active'
+  AND (now() - query_start) > interval '5 minutes'
+ORDER BY duration DESC;
+```
+
+#### Stop a Problematic Query
+
+##### Cancel a single query safely (keeps the client connection open):
+```
+SELECT pg_cancel_backend(YOUR_QUERY_PID);
+```
+
+##### Force terminate the backend process (completely closes the client connection)
+```
+SELECT pg_terminate_backend(YOUR_QUERY_PID);
+```
+
+#### Checking Table-Level Transaction Age
+
+```
+SELECT c.oid::regclass as table_name,
+       greatest(age(c.relfrozenxid),age(t.relfrozenxid)) as age
+FROM pg_class c
+LEFT JOIN pg_class t ON c.reltoastrelid = t.oid
+WHERE c.relkind IN ('r', 'm');
+```
+
+What it does: This query finds the "age" (measured in number of transactions elapsed since the last whole-table vacuum) of every individual table and its associated TOAST table.
+
+Breakdown of the components:
+
+c.oid::regclass as table_name: Converts the internal object ID (oid) of the table into its actual human-readable text name.
+
+pg_class c: The system catalog table that stores metadata about tables, indexes, and views.
+
+LEFT JOIN pg_class t ON c.reltoastrelid = t.oid: Joins the main table to its TOAST table (if it has one). TOAST tables store large data fields (like long text or JSON blobs) out-of-line, and they have their own transaction ages that must be monitored.
+
+greatest(age(c.relfrozenxid), age(t.relfrozenxid)): The age() function calculates how many transactions have passed since the table was last frozen. greatest() ensures you see the worse/older of the two ages between the main table and its TOAST table.
+
+WHERE c.relkind IN ('r', 'm'): Filters the results to only look at regular tables ('r') and materialized views ('m'), ignoring indexes, views, or sequences.
+
+#### Checking Database-Level Transaction Age
+
+```
+SELECT datname, age(datfrozenxid) FROM pg_database;
+```
+
+What it does: This is a high-level, bird's-eye view query. It checks the transaction age of entire databases within your Postgres cluster.
+
+Breakdown of the components:
+
+datname: The name of the database.
+
+age(datfrozenxid): Looks at datfrozenxid, which represents the oldest unfrozen transaction ID across the entire database. The age() function tells you how many transactions ago that oldest record was created.
+
+PostgreSQL Transaction ID (XID) Wraparound Monitoring
+
+This repository provides queries and documentation for monitoring **Transaction ID (XID) Wraparound** in PostgreSQL. Transaction IDs are finite 32-bit integers (maxing out around 4 billion). To prevent data loss from a wraparound event—where the transaction counter resets to 0 and old data suddenly appears to be in the future—PostgreSQL uses a background process called `VACUUM` to "freeze" old transactions.
+
+Use the provided scripts to proactively identify databases and specific tables getting dangerously close to the 2-billion transaction limit.
+
+---
+
+##### Thresholds & Action Plan
+
+Keep a close eye on the `age` column returned by the monitoring queries. Use the following operational guidelines to interpret the results:
+
+| Age Value | Status | Action Required |
+| :--- | :---: | :--- |
+| **< 100–150 Million** | 🟢 Normal | Autovacuum is handling things smoothly. No manual intervention required. |
+| **> 200 Million** | 🟡 Warning | PostgreSQL will aggressively kick off anti-wraparound autovacuuming (`autovacuum_freeze_max_age`). This can cause high disk I/O spikes and performance degradation. |
+| **~ 2 Billion** | 🔴 Critical | **Emergency.** PostgreSQL will shut down completely and refuse to accept new write transactions to prevent data corruption. The cluster will require manual booting into single-user mode to run `VACUUM FREEZE`. |
+
+---
+
+
+#### VACUUM FREEZE 
+
+```
+VACUUM FREEZE table_name;
+```
+
+In PostgreSQL, VACUUM FREEZE table_name; is an aggressive maintenance command used to prevent Transaction ID (XID) Wraparound, a critical state that can cause data corruption or force your database to shut down completely.
+
+Here is a breakdown of what the command does, how it works, and when you should use it.
+
+What it does (The Core Concept)
+Every time a row is inserted, updated, or deleted in PostgreSQL, it is stamped with the ID of the transaction that created it (stored in a hidden column called xmin). PostgreSQL transaction IDs are finite 32-bit integers, meaning there are only about 4 billion possible IDs.
+
+Because of this limit, the transaction counter eventually wraps around back to zero. When this happens, PostgreSQL needs to ensure that older data doesn't suddenly appear to have been created "in the future" (which would make it invisible to current transactions).
+
+VACUUM FREEZE fixes this by scanning the specified table and "freezing" all visible rows.
+
+What happens during a "Freeze"?
+When you execute VACUUM FREEZE table_name;, PostgreSQL performs the following steps on that specific table:
+
+Replaces Transaction IDs: It takes the internal transaction IDs (xmin) of all rows older than a certain threshold and converts them into a special, permanent transaction ID called FrozenTransactionId (internally represented as transaction ID 2).
+
+Marks Rows as Permanently Valid: Any row stamped with this frozen ID is treated as being in the infinite past. It will always be visible to all current and future transactions, regardless of how high the transaction counter climbs.
+
+Advances the Safety Counter: Once all rows in the table are frozen, PostgreSQL updates the table's internal metadata (relfrozenxid in the pg_class catalog). This resets the table's "age" back to 1, safely moving it away from the 2-billion transaction danger zone.
+
+Reclaims Space (Standard Vacuuming): Like a normal vacuum, it also removes dead row versions (garbage left behind by updates and deletes) and frees up space.
+
+How is it different from a regular VACUUM?
+While both clean up a table, their intent and intensity differ:
+
+Standard VACUUM: Focuses primarily on cleaning up dead rows (bloat) to reclaim space. It will only freeze rows that are exceptionally old based on your vacuum_freeze_min_age configuration setting. If a table hasn't changed much, a standard vacuum might skip pages entirely.
+
+VACUUM FREEZE: Forces an immediate, aggressive freeze on all rows that can possibly be frozen, regardless of how recently they were modified. It forces PostgreSQL to scan the entire table thoroughly to advance the relfrozenxid counter as much as possible.
+
+When should you run VACUUM FREEZE?
+While PostgreSQL has a background process called Autovacuum that automatically triggers a freeze when a table reaches a certain age (controlled by autovacuum_freeze_max_age), you typically run it manually in these scenarios:
+
+Emergency Prevention: If your monitoring queries show a table's transaction age creeping close to or exceeding 200 million, and autovacuum is running too slowly to catch up.
+
+After Bulk Loads: If you have just loaded a massive amount of historical, read-only data into a table (e.g., millions of rows of logs or archives) that will rarely change, running VACUUM FREEZE immediately ensures those rows are frozen right away. This prevents autovacuum from having to waste heavy disk I/O scanning that giant table later on during peak traffic hours.
+
+Before Major Migrations/Upgrades: Freezing tables ahead of major database operations ensures that the system doesn't unexpectedly trigger an intensive background anti-wraparound vacuum in the middle of your maintenance window.

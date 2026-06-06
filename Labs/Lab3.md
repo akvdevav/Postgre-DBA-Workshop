@@ -42,7 +42,27 @@ SELECT
     (random() * 490 + 10)::NUMERIC(10, 2), -- Random execution price ($10.00 to $500.00)
     'PENDING', -- All new trades start as pending
     NOW() - (random() * interval '30 days') -- Random date within the last 30 days
-FROM generate_series(1, 1000000);
+FROM generate_series(1, 10000000);
+```
+
+```
+-- Generate 1,000,000 rows of random initial trade data
+INSERT INTO trade_history (user_id, symbol, trade_type, quantity, price, status, trade_date)
+SELECT 
+    floor(random() * 10000 + 1)::INT, -- Random user ID between 1 and 10,000
+    
+    -- Generates a random 4-letter uppercase string (ASCII 65 to 90)
+    chr(floor(random() * 26 + 65)::INT) || 
+    chr(floor(random() * 26 + 65)::INT) || 
+    chr(floor(random() * 26 + 65)::INT) || 
+    chr(floor(random() * 26 + 65)::INT), 
+    
+    (ARRAY['BUY', 'SELL'])[floor(random() * 2 + 1)], -- Random trade type
+    floor(random() * 990 + 10)::INT, -- Random share quantity (10 to 1,000)
+    (random() * 490 + 10)::NUMERIC(10, 2), -- Random execution price ($10.00 to $500.00)
+    'PENDING', -- All new trades start as pending
+    NOW() - (random() * interval '30 days') -- Random date within the last 30 days
+FROM generate_series(1, 10000000);
 ```
 
 

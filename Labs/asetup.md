@@ -48,6 +48,12 @@ When you run CREATE EXTENSION IF NOT EXISTS pg_buffercache;, you are unlocking t
 CREATE EXTENSION IF NOT EXISTS pg_buffercache;
 ```
 
+####
+
+```
+CREATE EXTENSION IF NOT EXISTS pgstattuple;
+```
+
 ```
 CREATE DATABASE postgres_workshop;
 ```
@@ -57,6 +63,51 @@ psql -h localhost -p 5432 -U postgres -d postgres
 ```
 
 ### Tables 
+
+```
+-- Create the trading table
+CREATE TABLE trade_history (
+    trade_id BIGSERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    symbol VARCHAR(10) NOT NULL,
+    trade_type VARCHAR(4) NOT NULL,
+    quantity INT NOT NULL,
+    price NUMERIC(10, 2) NOT NULL,
+    status VARCHAR(15) NOT NULL,
+    trade_date TIMESTAMP NOT NULL
+)WITH (autovacuum_enabled = false);
+
+-- Generate 1,000,000 rows of random initial trade data
+INSERT INTO trade_history (user_id, symbol, trade_type, quantity, price, status, trade_date)
+SELECT 
+    floor(random() * 10000 + 1)::INT, -- Random user ID between 1 and 10,000
+    (ARRAY['AAPL', 'MSFT', 'AMZN', 'NVDA', 'JPM', 'GS', 'V', 'SQ'])[floor(random() * 8 + 1)], -- Random stock
+    (ARRAY['BUY', 'SELL'])[floor(random() * 2 + 1)], -- Random trade type
+    floor(random() * 990 + 10)::INT, -- Random share quantity (10 to 1,000)
+    (random() * 490 + 10)::NUMERIC(10, 2), -- Random execution price ($10.00 to $500.00)
+    'PENDING', -- All new trades start as pending
+    NOW() - (random() * interval '30 days') -- Random date within the last 30 days
+FROM generate_series(1, 10000000);
+
+-- Generate 1,000,000 rows of random initial trade data
+INSERT INTO trade_history (user_id, symbol, trade_type, quantity, price, status, trade_date)
+SELECT 
+    floor(random() * 10000 + 1)::INT, -- Random user ID between 1 and 10,000
+    
+    -- Generates a random 4-letter uppercase string (ASCII 65 to 90)
+    chr(floor(random() * 26 + 65)::INT) || 
+    chr(floor(random() * 26 + 65)::INT) || 
+    chr(floor(random() * 26 + 65)::INT) || 
+    chr(floor(random() * 26 + 65)::INT), 
+    
+    (ARRAY['BUY', 'SELL'])[floor(random() * 2 + 1)], -- Random trade type
+    floor(random() * 990 + 10)::INT, -- Random share quantity (10 to 1,000)
+    (random() * 490 + 10)::NUMERIC(10, 2), -- Random execution price ($10.00 to $500.00)
+    'PENDING', -- All new trades start as pending
+    NOW() - (random() * interval '30 days') -- Random date within the last 30 days
+FROM generate_series(1, 10000000);
+```
+
 
 ```
 -- Extensions & Custom Types
