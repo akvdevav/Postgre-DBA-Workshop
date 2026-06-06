@@ -44,7 +44,4 @@ podman run -d \
   -p 3000:3000 \
   grafana/grafana
 
-  podman run -d \
-  --name grafana \
-  -p 3000:3000 \
-  grafana/grafana
+

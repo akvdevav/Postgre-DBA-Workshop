@@ -4,30 +4,35 @@ The final objective of this framework is to provide the attendee with a codified
 
 #### Troubleshooting Workflow: The Mental Model
 When a performance incident is reported, the engineer should follow a structured diagnostic path to isolate the root cause:
+
 Level 1: System Saturation
 Check OS-level metrics (CPU, RAM, Disk I/O, Network).
 If CPU is high, check pg_stat_activity for "active" queries without wait events.
 If I/O is high, check for DataFileRead wait events and queries with high shared_blks_read in pg_stat_statements.
+
 Level 2: Contention and Blocking
 Use pg_blocking_pids() to identify lock hierarchies.
 Identify "idle in transaction" sessions that are holding locks and preventing autovacuum from reclaiming space.
 Check for "Wait Event: Lock" in pg_stat_activity.
+
 Level 3: Query Inefficiency
 Extract the top queries from pg_stat_statements.
 Run EXPLAIN (ANALYZE, BUFFERS) on the slowest queries.
 Check for Sequential Scans on large tables and evaluate if an index (B-Tree, GIN, or BRIN) is missing.
+
 Level 4: Maintenance Health
 Check table and index bloat levels using pgstattuple.
 Monitor XID age to prevent wraparound lockouts.
 Validate that autovacuum workers are not being cancelled by heavy DML or long-running analytics queries.
+
 Performance Optimization Kit: Essential SQL Library
 A library of prepared scripts ensures that a DBA can respond to incidents with precision and speed.
+
 Script 1: Identifying the Top 10 Most Bloated Tables
 This script uses the pg_stat_user_tables view to find candidates for manual vacuuming or tuning.
 
-SQL
 
-
+```
 SELECT 
     schemaname, 
     relname AS table_name, 
@@ -39,14 +44,12 @@ FROM pg_stat_user_tables
 WHERE n_dead_tup > 1000
 ORDER BY dead_pct DESC
 LIMIT 10;
+```
 
-
-Script 2: Finding Missing Indexes
+### Script 2: Finding Missing Indexes
 This heuristic query identifies tables with high volumes of sequential scans where the scans are actually retrieving very few rows—a classic sign that an index could significantly improve performance.
 
-SQL
-
-
+```
 SELECT 
     relname, 
     seq_scan - idx_scan AS scan_diff, 
@@ -55,14 +58,13 @@ FROM pg_stat_user_tables
 WHERE seq_scan > 100 AND seq_tup_read > 10000
 ORDER BY 2 DESC
 LIMIT 10;
-
+```
 
 ### 1. Finding PostgreSQL Database Configurations
 
 The easiest way to find and understand PostgreSQL configurations is directly inside the database using the pg_settings system view. This is vastly superior to just reading the postgresql.conf file because pg_settings includes the active values, the units (e.g., 8kB pages vs. MB), and a description of what the setting actually does.
 
 #### The DBA Discovery Query:
-SQL
 
 ```
 -- View the most important settings, their current values, and descriptions
