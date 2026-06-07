@@ -18,9 +18,9 @@ In this scenario, we reproduce a row-level lock contention and use pg_stat_activ
 
 SQL
 ```
-CREATE TABLE accounts ( id SERIAL PRIMARY KEY, owner_name 
+CREATE TABLE accounts_new ( id SERIAL PRIMARY KEY, owner_name 
 TEXT, balance NUMERIC(15, 2), tier INTEGER ); 
-INSERT INTO accounts (owner_name, balance, tier)
+INSERT INTO accounts_new (owner_name, balance, tier)
 SELECT 
     'User_' || i, 
     (random() * 10000)::numeric(15, 2), 
@@ -31,12 +31,12 @@ FROM generate_series(1, 1000) i;
 ```
 -- SESSION 1: Create a lock
 BEGIN;
-UPDATE accounts SET tier = 5 WHERE id = 110; -- Do not commit
+UPDATE accounts_new SET tier = 100 WHERE id = 76; -- Do not commit
 ```
 
 ```
 -- SESSION 2: Try to update the same row
-UPDATE accounts SET tier = 6 WHERE id = 110; -- This will hang
+UPDATE accounts_new SET tier = 61 WHERE id = 76; -- This will hang
 ```
 
 ```
@@ -78,7 +78,6 @@ pg_stat_statements.track = all
 Once enabled, the top 5 slowest queries by total execution time can be identified:
 
 ```
-SQL
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 

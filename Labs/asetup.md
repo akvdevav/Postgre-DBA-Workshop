@@ -55,6 +55,10 @@ CREATE EXTENSION IF NOT EXISTS pgstattuple;
 ```
 
 ```
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+```
+
+```
 CREATE DATABASE postgres_workshop;
 ```
 
