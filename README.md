@@ -2,6 +2,8 @@
 
 This repository is a hands-on PostgreSQL DBA workshop covering performance troubleshooting, storage internals, high availability, recovery, and database machine learning.
 
+![1](1.png)
+
 ## Workshop overview
 
 - `Labs/Lab1.md` — Shared buffer and `pg_buffercache` visualization for memory residency and hot object analysis.
