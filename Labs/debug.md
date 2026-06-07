@@ -100,23 +100,41 @@ How much WAL can grow before a checkpoint.
 Financial systems write heavily; this needs to be large (e.g., 10GB+).
 
 2. Finding Linux OS Level Configurations
+
 PostgreSQL relies heavily on the Linux kernel for caching, memory management, and file I/O. If you configure Postgres to use 10,000 files, but Linux only allows an application to open 1,024, Postgres will simply crash.
+
 You generally check these settings using sysctl and ulimit on your Linux terminal.
+
 Key Linux OS Configurations to Check:
+
 Open File Limits (ulimit -n):
+
 How to find: Run ulimit -Sn (soft limit) and ulimit -Hn (hard limit).
+
 Why it matters: PostgreSQL opens a file descriptor for every single table, index, and connection. In an enterprise system with thousands of partitions, the default Linux limit of 1024 will cause "too many open files" errors.
+
 Where to fix: /etc/security/limits.conf
+
 Memory Overcommit (vm.overcommit_memory):
+
 How to find: Run sysctl vm.overcommit_memory
+
 Why it matters: Linux loves to promise applications memory it doesn't actually have. If it suddenly runs out, the OS Out-Of-Memory (OOM) Killer will assassinate PostgreSQL to save the system. DBAs usually set this to 2 (Strict overcommit) to prevent crashes.
+
 Where to fix: /etc/sysctl.conf
+
 Swappiness (vm.swappiness):
+
 How to find: Run sysctl vm.swappiness
+
 Why it matters: Linux tries to swap inactive memory to disk. You never want Postgres shared memory swapped out to disk. Lower this from the default 60 to 1 or 10.
+
 Where to fix: /etc/sysctl.conf
+
 Huge Pages (vm.nr_hugepages):
+
 How to find: Run grep HugePages /proc/meminfo
 Why it matters: For databases with large shared_buffers (e.g., > 16GB), standard 4KB memory pages create massive CPU overhead. Configuring Linux Huge Pages (usually 2MB size) drastically improves performance.
+
 3. The DBA "Cheat Code": PGTune
 Instead of guessing the baseline configurations, most DBAs use a tool like PGTune (available via web browser). It is an industry-standard calculator where you input your OS type, total RAM, CPU cores, disk type, and workload type (e.g., OLTP for trading systems). It generates the exact mathematical postgresql.conf values you should start with, saving you hours of manual calculation.
