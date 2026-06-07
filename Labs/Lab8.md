@@ -161,6 +161,10 @@ FROM pgml.diabetes
 LIMIT 5;
 ```
 
+```
+RESET ROLE;
+```
+
 #### Notes for DBAs:
 It feels native: It uses standard PostgreSQL DCL (GRANT/REVOKE) to solve an MLOps problem, translating a foreign concept into their native language.
 

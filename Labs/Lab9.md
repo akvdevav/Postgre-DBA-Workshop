@@ -17,6 +17,14 @@ podman run \
 ```
 
 ```
+CREATE DATABASE finance;
+```
+
+```
+\c finance
+```
+
+```
 -- 1. Enable the PostgresML extension
 CREATE EXTENSION IF NOT EXISTS pgml;
 ```
@@ -108,7 +116,7 @@ SELECT * FROM pgml.train(
 #### Step 4: Compliance & Audit (DBA Simulation)
 Switch back to the superuser. In a financial audit, DBAs need to prove exactly what models exist in the database, what algorithms they use, and when they were deployed.
 
-``
+```
 -- Revert back to superuser (DBA)
 RESET ROLE;
 ```
