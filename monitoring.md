@@ -48,7 +48,7 @@ GRANT pg_monitor TO admin;
   prom/prometheus
 ```
 
-#### Default creds for grafana admin/admin
+#### Deploy Grafana
 
 ```
   podman run -d \
@@ -57,6 +57,7 @@ GRANT pg_monitor TO admin;
   -p 3000:3000 \
   grafana/grafana
 ```
+- Default creds for grafana admin/admin
 - Setup data source: http://prometheus:9090
 - Setup dashbaord: use the grafana-dashboard.json
 
