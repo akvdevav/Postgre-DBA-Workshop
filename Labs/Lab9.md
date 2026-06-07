@@ -94,6 +94,17 @@ GRANT EXECUTE ON FUNCTION pgml.predict(text, real[]) TO banking_app;
 GRANT EXECUTE ON FUNCTION pgml.predict(text, double precision[]) TO banking_app;
 ```
 
+```
+-- 1. Create a clean training view without the loan_id
+CREATE VIEW public.loan_training_data AS
+SELECT credit_score, dti_ratio, loan_amount, defaulted
+FROM public.loan_history;
+```
+
+```
+GRANT SELECT ON public.loan_training_data TO quant_admin, banking_app;
+```
+
 #### Step 3: Train the Risk Model (Quant Simulation)
 Switch context to simulate the Quant deploying a risk model. We will train a classification model to predict whether a loan will default based on historical data.
 
@@ -165,11 +176,19 @@ SELECT
     -- Expected output: 1 (High Risk / Default)
 ```
 
+
 ```
+-- 3. Score a new loan application in real-time!
+-- We pass an array of features: [credit_score, dti_ratio, loan_amount]
 SELECT 
     pgml.predict(
         'Loan Default Predictor', 
         ARRAY[780, 0.15, 50000]::real[]
     ) AS predicted_default_risk; 
     -- Expected output: 0 (Low Risk / Safe)
+```
+
+
+```
+SELECT current_user, session_user;
 ```

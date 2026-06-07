@@ -235,3 +235,65 @@ Plaintext
 ```
 
 Once the restore is complete, starting the PostgreSQL process will cause it to enter "recovery mode," where it pulls the necessary WAL files from the pgBackRest repository and applies them sequentially until the target timestamp is reached.38
+
+
+### Extra Commands for Debugging WAL
+
+WAL files are saved inside your PostgreSQL data directory. You can find their exact location by running this command inside the psql console
+```
+SHOW data_directory;
+```
+
+Check WAL Metrics and Status (SQL).You can use built-in SQL functions to monitor WAL activity without leaving the database.Find the Current Log File and LocationTo find the active Log Sequence Number (LSN) and the specific file name currently being written to, run:
+
+```
+SELECT pg_current_wal_lsn(), pg_walfile_name(pg_current_wal_lsn());
+
+```
+
+Check General WAL Statistics (PostgreSQL 14+)To view performance stats like total bytes written, record counts, and write times, query the pg_stat_wal view
+
+```
+SELECT * FROM pg_stat_wal;
+```
+
+Count Unarchived WAL FilesIf you are managing replication or archiving, you can count how many files are waiting to sync:
+```
+SELECT count(*) FROM pg_ls_dir('pg_wal/archive_status') WHERE pg_ls_dir ~ E'\\.ready$';
+```
+
+ Read Binary WAL ContentTo decode the binary logs into human-readable data, use one of the following tools:Option A: Use pg_waldump (Command Line)The pg_waldump utility allows you to parse WAL segments directly from your server's terminal. You must run this command as the postgres user or a user with physical read access to the data directory.
+
+ ```
+ pg_waldump /var/lib/postgresql/data/pg_wal/000000010000000000000001
+ ```
+
+ To see a summary of resource managers (DML/DDL types) inside a file:
+
+ ```
+ pg_waldump --stats /var/lib/postgresql/data/pg_wal/000000010000000000000001
+ ```
+
+
+```
+CREATE EXTENSION pg_walinspect;
+```
+
+```
+SELECT name
+FROM pg_ls_dir('pg_wal') AS name
+WHERE name !~ 'archive_status'
+ORDER BY name DESC
+LIMIT 5;
+```
+
+```
+SELECT
+    pg_current_wal_lsn() AS "Current_Active_LSN",
+    pg_current_wal_insert_lsn() AS "Current_Insert_LSN";
+```
+
+```
+SELECT start_lsn, end_lsn, resource_manager, description 
+FROM pg_get_wal_records_info('0/20265B0', '0/20265B0');
+```
