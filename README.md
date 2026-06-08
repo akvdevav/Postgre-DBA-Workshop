@@ -6,6 +6,12 @@ This repository is a hands-on PostgreSQL DBA workshop covering performance troub
 
 ## Workshop overview
 
+### Setup: 
+ - Checkout `setup.md`
+ - Monitoring `moitoring.md`
+
+### LABS 
+
 - `Labs/Lab1.md` — Shared buffer and `pg_buffercache` visualization for memory residency and hot object analysis.
 - `Labs/Lab2.md` — Index benchmarking with large time-series data, comparing B-Tree and BRIN indexes.
 - `Labs/Lab3.md` — MVCC, bloat, and autovacuum diagnostics with `pgstattuple`.
