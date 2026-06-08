@@ -15,6 +15,14 @@ brew install podman
 
 ### Setting up Postgres in Podman
 
+
+#### Create a newtwork for container communication
+```
+podman network create workshop
+```
+
+#### Deploy postgres in podman 
+
 ```
 podman run -d \
   --name my-postgres \
