@@ -188,6 +188,37 @@ SELECT
     -- Expected output: 0 (Low Risk / Safe)
 ```
 
+#### Sample output for perdict
+
+```
+finance=> -- 2. Score a new loan application in real-time!
+-- We pass an array of features: [credit_score, dti_ratio, loan_amount]
+SELECT
+    pgml.predict(
+        'Loan Default Predictor',
+        ARRAY[610, 0.45, 25000]::real[]
+    ) AS predicted_default_risk;
+    -- Expected output: 1 (High Risk / Default)
+ predicted_default_risk
+------------------------
+                      1
+(1 row)
+
+finance=>
+finance=> -- 3. Score a new loan application in real-time!
+-- We pass an array of features: [credit_score, dti_ratio, loan_amount]
+SELECT
+    pgml.predict(
+        'Loan Default Predictor',
+        ARRAY[780, 0.15, 50000]::real[]
+    ) AS predicted_default_risk;
+    -- Expected output: 0 (Low Risk / Safe)
+ predicted_default_risk
+------------------------
+                      0
+(1 row)
+```
+
 
 ```
 SELECT current_user, session_user;
