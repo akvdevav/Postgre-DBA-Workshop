@@ -52,6 +52,10 @@ ORDER BY buffers DESC
 LIMIT 10;
 ```
 
+```
+SELECT count(*) AS total_buffers, round(count(*) * 8192 / 1024 / 1024, 2) AS total_cache_mb, sum(CASE WHEN relfilenode IS NULLTHEN 1 ELSE 0 END) AS free_buffers, round(sum(CASE WHEN relfilenode IS NULL THEN 1 ELSE 0 END) * 8192 / 1024 / 1024, 2) AS free_cache_mb, sum(CASE WHEN relfilenode IS NOT NULL THEN 1 ELSE 0 END) AS used_buffers, round(sum(CASE WHENrelfilenode IS NOT NULL THEN 1 ELSE 0 END) * 8192 / 1024 / 1024, 2) AS used_cache_mb, round((sum(CASE WHEN relfilenode ISNOT NULL THEN 1 ELSE 0 END)::numeric / count(*)) * 100, 2) AS usage_percentage FROM pg_buffercache;
+```
+
 . The Core Concept: Shared Buffers
 To understand this extension, you first have to understand how PostgreSQL handles memory.
 
