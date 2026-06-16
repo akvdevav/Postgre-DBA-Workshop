@@ -118,7 +118,7 @@ SET ROLE quant_admin;
 SELECT * FROM pgml.train(
     project_name => 'Loan Default Predictor',
     task => 'classification',
-    relation_name => 'public.loan_history',
+    relation_name => 'public.loan_training_data', -- Updated to use the view
     y_column_name => 'defaulted',
     algorithm => 'xgboost'
 );

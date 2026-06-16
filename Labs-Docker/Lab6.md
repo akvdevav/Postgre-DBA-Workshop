@@ -20,12 +20,12 @@ cd patroni
 ```
 
 ```
-podman build -t patroni .
+docker build -t patroni .
 ```
 
 ### Podman compose to setup the Patroni Clusterd Postgres
 ```
-podman compose up -d
+docker compose up -d
 ```
 
 ```mermaid
@@ -122,7 +122,7 @@ graph TD
 ### 1. Check current cluster status
 
 ```
-podman exec -it  demo-patroni1 patronictl list
+docker exec -it  demo-patroni1 patronictl list
 ```
 
 ##### Samaple output for reference
@@ -142,13 +142,13 @@ avannala@Q2HWTCX6H4 patroni % podman exec -it  demo-patroni1 patronictl list
 NOTE: Leader node should use to run when running create/write commands
 
 ```
-podman exec -it  demo-patroni1 psql -d postgres -c "CREATE ROLE admin WITH LOGIN SUPERUSER PASSWORD 'password';"
+docker exec -it  demo-patroni1 psql -d postgres -c "CREATE ROLE admin WITH LOGIN SUPERUSER PASSWORD 'password';"
 ```
 
 ### 3 Lets load some sample data
 
 ```
-podman exec -it  demo-patroni1 psql -d postgres 
+docker exec -it  demo-patroni1 psql -d postgres 
 ```
 
 ### 4. Lets connect via PgAdmin to see how seamless you can access the data.
@@ -165,7 +165,7 @@ podman exec -it  demo-patroni1 psql -d postgres
 ### 5. Simulate failure by stopping the leader
 
 ```
-podman stop  demo-patroni1
+docker stop  demo-patroni1
 ```
 
 ### 6. Check the status
@@ -173,7 +173,7 @@ podman stop  demo-patroni1
 NOTE: Use the other running nodes to run the command in this case we use "demo-patroni2" node
  
 ```
-podman exec -it  demo-patroni2 patronictl list
+docker exec -it  demo-patroni2 patronictl list
 ```
 
 ##### Sample output
@@ -190,7 +190,7 @@ avannala@Q2HWTCX6H4 patroni % podman exec -it  demo-patroni2 patronictl list
 ### 7. Observe Patroni electing a new leader and HAProxy updating its route
 
 ```
- podman logs demo-haproxy -f
+ docker logs demo-haproxy -f
 ```
 
 ### 8. Run some queries via PgAdmin to validate you are still able to access data or write data etc
@@ -203,7 +203,7 @@ SELECT account_id, user_id, currency, balance, account_type, updated_at
 ### 10. Validate node status via psql connecting via ha_proxy
 
 ```
-podman exec -it demo-haproxy psql -h 127.0.0.1 -p 5000 -U admin  -d postgres
+docker exec -it demo-haproxy psql -h 127.0.0.1 -p 5000 -U admin  -d postgres
 ```
 
 Password for user admin: password
