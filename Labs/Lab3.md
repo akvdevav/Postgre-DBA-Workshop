@@ -139,6 +139,10 @@ VACUUM FULL VERBOSE trade_history;
 ```
 -- Check the final size and health
 SELECT pg_size_pretty(pg_relation_size('trade_history')) AS table_size;
+```
+
+
+```
 SELECT * FROM pgstattuple('trade_history');
 ```
 
