@@ -1,6 +1,6 @@
 # Postgre-DBA-Workshop
 
-This repository is a hands-on PostgreSQL DBA workshop covering performance troubleshooting, storage internals, high availability, recovery, and database machine learning.
+Hands-on PostgreSQL DBA workshop covering performance troubleshooting, storage internals, high availability, recovery, and database machine learning.
 
 ![1](1.png)
 
